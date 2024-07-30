@@ -1,0 +1,22 @@
+{
+  "name": "balloon-popper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "serve": "node serve.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/ws": "^8.5.12",
+    "http-server": "^14.1.1",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
