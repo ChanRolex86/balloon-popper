@@ -146,27 +146,26 @@
             color: #FFFFFF;
         }
 
-        @media (min-aspect-ratio: 4/3) {
-            canvas {
-                position: absolute;
-                height: 100%;
-                left: 50%;
-                transform: translate(-50%, 0%)
-            }
+        canvas#info {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 0;
         }
 
-        @media not (min-aspect-ratio: 4/3) {
-            canvas {
-                position: absolute;
-                width: 100%;
-                top: 50%;
-                transform: translate(0%, -50%)
-            }
+        canvas#game {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
         }
     </style>
 </head>
 
 <body>
+    <canvas id="info"></canvas>
     <canvas id="game"></canvas>
     <script type="module" src="client.mjs"></script>
 </body>

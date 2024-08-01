@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as common from './common.mjs';
-import { Player } from './common.mjs';
+import { Player, Balloon } from './common.mjs';
 
 namespace Stats {
     const AVERAGE_CAPACITY = 30;
@@ -127,13 +127,19 @@ namespace Stats {
 const SERVER_FPS = 60;
 const SERVER_LIMIT = 10;
 
+const BALLOON_LIMIT = 10;
+
 interface PlayerOnServer extends Player {
     ws: WebSocket,
 }
 
 const players = new Map<number, PlayerOnServer>();
+const balloons = new Map<number, Balloon>();
 
 let idCounter = 0;
+
+let balloonCounter = 0;
+
 let bytesReceivedWithinTick = 0;
 let messagesReceivedWithinTick = 0;
 
@@ -144,6 +150,9 @@ const wss = new WebSocketServer({
 const joinedIds = new Set<number>;
 const leftIds = new Set<number>;
 const pingIds = new Map<number, number>();
+
+const createdBalloonIds = new Set<number>;
+const poppedBalloonIds = new Set<number>;
 
 wss.on('connection', function connection(ws) {
     ws.binaryType = 'arraybuffer';
@@ -246,6 +255,59 @@ function tick() {
         }
     });
 
+    if (players.size && balloonCounter < BALLOON_LIMIT && Stats.ticksCount.counter % (SERVER_FPS / 2) === 0) {
+        const dynamicProbability = Math.exp(-balloonCounter / (BALLOON_LIMIT / 4));
+        if (Math.random() < dynamicProbability) {
+            console.log("create balloon");
+
+            const id = idCounter++;
+            const x = Math.random() * (common.WORLD_WIDTH - common.BALLOON_SIZE);
+            const y = Math.random() * (common.WORLD_HEIGHT - common.BALLOON_SIZE);
+            const hue = Math.floor(Math.random() * 360);
+
+            const balloon = {
+                id,
+                x,
+                y,
+                hue,
+                timestamp
+            }
+
+            balloons.set(id, balloon);
+
+            createdBalloonIds.add(id);
+
+            balloonCounter++;
+        }
+    }
+
+    createdBalloonIds.forEach((createdBallonId) => {
+        const createdBalloon = balloons.get(createdBallonId);
+
+        if (createdBalloon !== undefined) {
+            // unsure why this would not be the case tbh but silencing may be undefined
+
+            const view = new DataView(new ArrayBuffer(common.BalloonCreatedStruct.size));
+
+            common.BalloonCreatedStruct.kind.write(view, common.MessageKind.BalloonCreated);
+
+            common.BalloonCreatedStruct.id.write(view, createdBalloon.id);
+            common.BalloonCreatedStruct.x.write(view, createdBalloon.x);
+            common.BalloonCreatedStruct.y.write(view, createdBalloon.y);
+            common.BalloonCreatedStruct.hue.write(view, createdBalloon.hue);
+            common.BalloonCreatedStruct.timestamp.write(view, createdBalloon.timestamp);
+
+            // this nested for each is fine as the outer for each is guarenteed to be singular at this point
+            // update whenever the outer becomes multiple
+            players.forEach((player) => {
+                player.ws.send(view);
+
+                bytesSentCounter += view.byteLength;
+                messageSentCounter += 1;
+            });
+        }
+    });
+
     const tickTime = performance.now() - timestamp;
 
     Stats.ticksCount.counter += 1;
@@ -257,6 +319,7 @@ function tick() {
     Stats.tickByteSent.pushSample(bytesSentCounter);
     Stats.tickByteReceived.pushSample(bytesReceivedWithinTick);
 
+    createdBalloonIds.clear();
     joinedIds.clear();
     leftIds.clear();
     pingIds.clear();
