@@ -194,6 +194,19 @@ wss.on('connection', function connection(ws) {
 
         if (common.PingStruct.verify(view)) {
             pingIds.set(id, common.PingStruct.timestamp.read(view));
+
+        } else if (common.BalloonPopStruct.verify(view)) {
+            const balloonId = common.BalloonPopStruct.id.read(view);
+            const balloon = balloons.get(balloonId);
+
+            if (balloon !== undefined) {
+                balloons.delete(id);
+                poppedBalloonIds.add(balloonId);
+                balloonCounter--;
+            } else {
+                console.log("balloon no longer exists");
+            }
+
         } else {
             Stats.bsMessages.counter += 1;
             ws.close();
@@ -222,6 +235,27 @@ function tick() {
     let messageSentCounter = 0;
     let bytesSentCounter = 0;
 
+    if (poppedBalloonIds.size > 0) {
+        {
+            // todo: refactor to remove the nested loop
+            poppedBalloonIds.forEach((balloonId) => {
+                const view = new DataView(new ArrayBuffer(common.BalloonPopStruct.size));
+
+                common.BalloonPopStruct.kind.write(view, common.MessageKind.BalloonPop);
+                common.BalloonPopStruct.timestamp.write(view, performance.now());
+                common.BalloonPopStruct.id.write(view, balloonId);
+
+                players.forEach((player) => {
+                    player.ws.send(view);
+
+                    bytesSentCounter += view.byteLength;
+                    messageSentCounter += 1;
+                });
+
+            });
+        }
+    }
+
     if (joinedIds.size > 0) {
         {
             joinedIds.forEach((joinedId) => {
@@ -246,8 +280,10 @@ function tick() {
         const player = players.get(id);
         if (player !== undefined) {
             const view = new DataView(new ArrayBuffer(common.PongStruct.size));
+
             common.PongStruct.kind.write(view, common.MessageKind.Pong);
             common.PongStruct.timestamp.write(view, timestamp);
+
             player.ws.send(view);
 
             bytesSentCounter += 1;
@@ -258,7 +294,6 @@ function tick() {
     if (players.size && balloonCounter < BALLOON_LIMIT && Stats.ticksCount.counter % (SERVER_FPS / 2) === 0) {
         const dynamicProbability = Math.exp(-balloonCounter / (BALLOON_LIMIT / 4));
         if (Math.random() < dynamicProbability) {
-            console.log("create balloon");
 
             const id = idCounter++;
             const x = Math.random() * (common.WORLD_WIDTH - common.BALLOON_SIZE);
@@ -320,6 +355,7 @@ function tick() {
     Stats.tickByteReceived.pushSample(bytesReceivedWithinTick);
 
     createdBalloonIds.clear();
+    poppedBalloonIds.clear();
     joinedIds.clear();
     leftIds.clear();
     pingIds.clear();

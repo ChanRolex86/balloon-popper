@@ -75,7 +75,10 @@ import type { Player, Balloon } from './common.mjs';
                     timestamp: common.BalloonCreatedStruct.timestamp.read(view)
                 });
 
-                console.log("balloon created");
+            } else if (common.BalloonPopStruct.verify(view)) {
+                const id = common.BalloonPopStruct.id.read(view);
+
+                balloons.delete(id);
             } else {
                 console.error("Received bs message from server.", view);
                 ws?.close();
@@ -141,10 +144,18 @@ import type { Player, Balloon } from './common.mjs';
     });
 
     gameCanvas.addEventListener("click", function (event) {
-        balloonPaths.forEach((balloonPath, id) => {
-            if (gameCtx.isPointInPath(balloonPath, event.offsetX, event.offsetY)) {
-                console.log("balloon clicked");
-            }
-        });
+        if (ws !== undefined && me !== undefined) {
+            balloonPaths.forEach((balloonPath, id) => {
+                if (gameCtx.isPointInPath(balloonPath, event.offsetX, event.offsetY)) {
+                    const view = new DataView(new ArrayBuffer(common.BalloonPopStruct.size));
+
+                    common.BalloonPopStruct.kind.write(view, common.MessageKind.BalloonPop);
+                    common.BalloonPopStruct.timestamp.write(view, performance.now());
+                    common.BalloonPopStruct.id.write(view, id);
+
+                    ws?.send(view);
+                }
+            });
+        }
     });
 })();

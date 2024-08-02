@@ -24,7 +24,8 @@ export enum MessageKind {
     Hello,
     Ping,
     Pong,
-    BalloonCreated
+    BalloonCreated,
+    BalloonPop
 }
 
 interface Field {
@@ -137,4 +138,15 @@ export const BalloonCreatedStruct = (() => {
     const verify = verifier(kind, MessageKind.BalloonCreated, size);
 
     return { kind, timestamp, id, x, y, hue, size, verify };
+})();
+
+export const BalloonPopStruct = (() => {
+    const allocator = { size: 0 };
+    const kind = allocUint8Field(allocator);
+    const timestamp = allocUint32Field(allocator);
+    const id = allocUint32Field(allocator);
+    const size = allocator.size;
+    const verify = verifier(kind, MessageKind.BalloonPop, size);
+
+    return { kind, timestamp, id, size, verify };
 })();
