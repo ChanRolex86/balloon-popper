@@ -167,7 +167,8 @@ wss.on('connection', function connection(ws) {
 
     const player = {
         ws,
-        id
+        id,
+        username: undefined
     }
 
     players.set(id, player);
@@ -192,7 +193,28 @@ wss.on('connection', function connection(ws) {
         Stats.bytesReceived.counter += view.byteLength;
         bytesReceivedWithinTick += view.byteLength;
 
-        if (common.PingStruct.verify(view)) {
+        if (common.SetUsernameStruct.verify(view)) {
+            const playerId = common.SetUsernameStruct.id.read(view);
+            const username = common.SetUsernameStruct.value.read(view);
+
+            const valid = !Array.from(players.values()).some(player => player.username === username);
+
+            const player = players.get(playerId);
+
+            if (player !== undefined) {
+
+                if (valid) player.username = username;
+
+                const view = new DataView(new ArrayBuffer(common.ValidUsernameStruct.size));
+
+                common.ValidUsernameStruct.kind.write(view, common.MessageKind.ValidUsername);
+                common.ValidUsernameStruct.value.write(view, username);
+                common.ValidUsernameStruct.valid.write(view, valid ? 1 : 0);
+
+                player.ws.send(view);
+            }
+
+        } else if (common.PingStruct.verify(view)) {
             pingIds.set(id, common.PingStruct.timestamp.read(view));
 
         } else if (common.BalloonPopStruct.verify(view)) {
@@ -246,10 +268,12 @@ function tick() {
                 common.BalloonPopStruct.id.write(view, balloonId);
 
                 players.forEach((player) => {
-                    player.ws.send(view);
+                    if (player.username !== undefined) {
+                        player.ws.send(view);
 
-                    bytesSentCounter += view.byteLength;
-                    messageSentCounter += 1;
+                        bytesSentCounter += view.byteLength;
+                        messageSentCounter += 1;
+                    }
                 });
 
             });
@@ -335,10 +359,12 @@ function tick() {
             // this nested for each is fine as the outer for each is guarenteed to be singular at this point
             // update whenever the outer becomes multiple
             players.forEach((player) => {
-                player.ws.send(view);
+                if (player.username !== undefined) {
+                    player.ws.send(view);
 
-                bytesSentCounter += view.byteLength;
-                messageSentCounter += 1;
+                    bytesSentCounter += view.byteLength;
+                    messageSentCounter += 1;
+                }
             });
         }
     });

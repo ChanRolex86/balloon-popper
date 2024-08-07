@@ -8,6 +8,8 @@ export const PADDING = WORLD_HEIGHT * 0.05;
 
 export const BALLOON_SIZE = 10;
 
+export const USERNAME_LENGTH = 8;
+
 export interface Balloon {
     id: number,
     x: number,
@@ -17,7 +19,8 @@ export interface Balloon {
 }
 
 export interface Player {
-    id: number
+    id: number,
+    username: Uint8Array | undefined
 }
 
 export enum MessageKind {
@@ -25,14 +28,26 @@ export enum MessageKind {
     Ping,
     Pong,
     BalloonCreated,
-    BalloonPop
+    BalloonPop,
+    SetUsername,
+    ValidUsername
 }
 
 interface Field {
     offset: number,
     size: number,
+    read(view: DataView): any;
+    write(view: DataView, value: any): void;
+}
+
+interface NumberField extends Field {
     read(view: DataView): number;
     write(view: DataView, value: number): void;
+}
+
+interface Uint8ArrayField extends Field {
+    read(view: DataView): Uint8Array;
+    write(view: DataView, value: Uint8Array): void;
 }
 
 export const UINT8_SIZE = 1;
@@ -40,7 +55,7 @@ export const UINT16_SIZE = 2;
 export const UINT32_SIZE = 4;
 export const FLOAT32_SIZE = 4;
 
-function allocUint8Field(allocator: { size: number }): Field {
+function allocUint8Field(allocator: { size: number }): NumberField {
     const offset = allocator.size;
     const size = UINT8_SIZE;
 
@@ -53,7 +68,7 @@ function allocUint8Field(allocator: { size: number }): Field {
     }
 }
 
-function allocUint16Field(allocator: { size: number }): Field {
+function allocUint16Field(allocator: { size: number }): NumberField {
     const offset = allocator.size;
     const size = UINT16_SIZE;
 
@@ -66,7 +81,7 @@ function allocUint16Field(allocator: { size: number }): Field {
     }
 }
 
-function allocUint32Field(allocator: { size: number }): Field {
+function allocUint32Field(allocator: { size: number }): NumberField {
     const offset = allocator.size;
     const size = UINT32_SIZE;
 
@@ -79,7 +94,31 @@ function allocUint32Field(allocator: { size: number }): Field {
     }
 }
 
-function allocFloat32Field(allocator: { size: number }): Field {
+function allocUint8ArrayField(allocator: { size: number }, length: number): Uint8ArrayField {
+    const offset = allocator.size;
+    const size = UINT8_SIZE * length;
+
+    allocator.size += size;
+
+    return {
+        offset,
+        size,
+        read: (view) => {
+            const array = new Uint8Array(length);
+            for (let i = 0; i < length; i++) {
+                array[i] = view.getUint8(offset + i);
+            }
+            return array;
+        },
+        write: (view, value: Uint8Array) => {
+            for (let i = 0; i < length; i++) {
+                view.setUint8(offset + i, value[i] || 0);
+            }
+        }
+    }
+}
+
+function allocFloat32Field(allocator: { size: number }): NumberField {
     const offset = allocator.size;
     const size = FLOAT32_SIZE;
 
@@ -104,6 +143,28 @@ export const HelloStruct = (() => {
     const verify = verifier(kind, MessageKind.Hello, size);
 
     return { kind, id, size, verify };
+})();
+
+export const SetUsernameStruct = (() => {
+    const allocator = { size: 0 };
+    const kind = allocUint8Field(allocator);
+    const id = allocUint8Field(allocator);
+    const value = allocUint8ArrayField(allocator, USERNAME_LENGTH);
+    const size = allocator.size;
+    const verify = verifier(kind, MessageKind.SetUsername, size);
+
+    return { kind, id, value, size, verify };
+})();
+
+export const ValidUsernameStruct = (() => {
+    const allocator = { size: 0 };
+    const kind = allocUint8Field(allocator);
+    const value = allocUint8ArrayField(allocator, USERNAME_LENGTH);
+    const valid = allocUint8Field(allocator);
+    const size = allocator.size;
+    const verify = verifier(kind, MessageKind.ValidUsername, size);
+
+    return { kind, value, valid, size, verify };
 })();
 
 export const PingStruct = (() => {
@@ -150,3 +211,12 @@ export const BalloonPopStruct = (() => {
 
     return { kind, timestamp, id, size, verify };
 })();
+
+
+export function stringToUint8Array(str: string, length: number): Uint8Array {
+    const array = new Uint8Array(length);
+    for (let i = 0; i < length; i++) {
+        array[i] = (str.charCodeAt(i) || 0);
+    }
+    return array;
+}

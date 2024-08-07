@@ -161,12 +161,21 @@
             transform: translate(-50%, -50%);
             z-index: 1;
         }
+
+        input#username {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2;
+        }
     </style>
 </head>
 
 <body>
     <canvas id="info"></canvas>
     <canvas id="game"></canvas>
+    <input id="username" hidden />
     <script type="module" src="client.mjs"></script>
 </body>
 
