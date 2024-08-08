@@ -69,7 +69,8 @@ import type { Player, Balloon } from './common.mjs';
             if (common.HelloStruct.verify(view)) {
                 me = {
                     id: common.HelloStruct.id.read(view),
-                    username: undefined
+                    username: undefined,
+                    score: 0
                 }
             } else {
                 console.error("Received bs message from server. Incorrect `Hello` message.", view);
@@ -175,19 +176,18 @@ import type { Player, Balloon } from './common.mjs';
     });
 
     gameCanvas.addEventListener("click", function (event) {
-        if (ws !== undefined && me !== undefined) {
-            balloonPaths.forEach((balloonPath, id) => {
-                if (gameCtx.isPointInPath(balloonPath, event.offsetX, event.offsetY)) {
-                    const view = new DataView(new ArrayBuffer(common.BalloonPopStruct.size));
+        balloonPaths.forEach((balloonPath, id) => {
+            if (ws !== undefined && me !== undefined && gameCtx.isPointInPath(balloonPath, event.offsetX, event.offsetY)) {
+                const view = new DataView(new ArrayBuffer(common.BalloonPopStruct.size));
 
-                    common.BalloonPopStruct.kind.write(view, common.MessageKind.BalloonPop);
-                    common.BalloonPopStruct.timestamp.write(view, performance.now());
-                    common.BalloonPopStruct.id.write(view, id);
+                common.BalloonPopStruct.kind.write(view, common.MessageKind.BalloonPop);
+                common.BalloonPopStruct.timestamp.write(view, performance.now());
+                common.BalloonPopStruct.id.write(view, id);
+                common.BalloonPopStruct.playerId.write(view, me.id);
 
-                    ws?.send(view);
-                }
-            });
-        }
+                ws.send(view);
+            }
+        });
     });
 
     usernameInput.addEventListener("keydown", function (event) {

@@ -20,7 +20,8 @@ export interface Balloon {
 
 export interface Player {
     id: number,
-    username: Uint8Array | undefined
+    username: Uint8Array | undefined,
+    score: number,
 }
 
 export enum MessageKind {
@@ -30,7 +31,8 @@ export enum MessageKind {
     BalloonCreated,
     BalloonPop,
     SetUsername,
-    ValidUsername
+    ValidUsername,
+    Players
 }
 
 interface Field {
@@ -148,7 +150,7 @@ export const HelloStruct = (() => {
 export const SetUsernameStruct = (() => {
     const allocator = { size: 0 };
     const kind = allocUint8Field(allocator);
-    const id = allocUint8Field(allocator);
+    const id = allocUint32Field(allocator);
     const value = allocUint8ArrayField(allocator, USERNAME_LENGTH);
     const size = allocator.size;
     const verify = verifier(kind, MessageKind.SetUsername, size);
@@ -165,6 +167,27 @@ export const ValidUsernameStruct = (() => {
     const verify = verifier(kind, MessageKind.ValidUsername, size);
 
     return { kind, value, valid, size, verify };
+})();
+
+export const PlayerStruct = (() => {
+    const allocator = { size: 0 };
+    const id = allocUint32Field(allocator);
+    const username = allocUint8ArrayField(allocator, USERNAME_LENGTH);
+    const score = allocUint32Field(allocator);
+    const size = allocator.size;
+
+    return { id, username, score, size };
+})();
+
+export const PlayersHeaderStruct = (() => {
+    const allocator = { size: 0 };
+    const kind = allocUint8Field(allocator);
+    const size = allocator.size;
+    const itemSize = PlayerStruct.size;
+    const verify = (view: DataView) => view.byteLength && (view.byteLength - size) % itemSize === 0 && kind.read(view) == MessageKind.Players;
+    const count = (view: DataView) => (view.byteLength - size) / itemSize;
+
+    return { kind, count, size, verify };
 })();
 
 export const PingStruct = (() => {
@@ -206,10 +229,11 @@ export const BalloonPopStruct = (() => {
     const kind = allocUint8Field(allocator);
     const timestamp = allocUint32Field(allocator);
     const id = allocUint32Field(allocator);
+    const playerId = allocUint32Field(allocator);
     const size = allocator.size;
     const verify = verifier(kind, MessageKind.BalloonPop, size);
 
-    return { kind, timestamp, id, size, verify };
+    return { kind, timestamp, id, playerId, size, verify };
 })();
 
 

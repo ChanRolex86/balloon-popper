@@ -133,6 +133,16 @@ interface PlayerOnServer extends Player {
     ws: WebSocket,
 }
 
+function filterPlayersOnServerMap(map: Map<number, PlayerOnServer>, predicate: (value: PlayerOnServer) => boolean): Map<number, PlayerOnServer> {
+    const result = new Map<number, PlayerOnServer>();
+
+    map.forEach((player, id) => {
+        if (predicate(player)) result.set(id, player);
+    });
+
+    return result;
+}
+
 const players = new Map<number, PlayerOnServer>();
 const balloons = new Map<number, Balloon>();
 
@@ -149,10 +159,16 @@ const wss = new WebSocketServer({
 
 const joinedIds = new Set<number>;
 const leftIds = new Set<number>;
+
 const pingIds = new Map<number, number>();
 
+const requestUsernameIds = new Map<number, Uint8Array>();
+const setUsernameIds = new Set<number>;
+
 const createdBalloonIds = new Set<number>;
-const poppedBalloonIds = new Set<number>;
+const poppedBalloonIds = new Map<number, number>();
+
+const updatedScorePlayerIds = new Set<number>;
 
 wss.on('connection', function connection(ws) {
     ws.binaryType = 'arraybuffer';
@@ -168,7 +184,8 @@ wss.on('connection', function connection(ws) {
     const player = {
         ws,
         id,
-        username: undefined
+        username: undefined,
+        score: 0
     }
 
     players.set(id, player);
@@ -197,22 +214,7 @@ wss.on('connection', function connection(ws) {
             const playerId = common.SetUsernameStruct.id.read(view);
             const username = common.SetUsernameStruct.value.read(view);
 
-            const valid = !Array.from(players.values()).some(player => player.username === username);
-
-            const player = players.get(playerId);
-
-            if (player !== undefined) {
-
-                if (valid) player.username = username;
-
-                const view = new DataView(new ArrayBuffer(common.ValidUsernameStruct.size));
-
-                common.ValidUsernameStruct.kind.write(view, common.MessageKind.ValidUsername);
-                common.ValidUsernameStruct.value.write(view, username);
-                common.ValidUsernameStruct.valid.write(view, valid ? 1 : 0);
-
-                player.ws.send(view);
-            }
+            requestUsernameIds.set(playerId, username);
 
         } else if (common.PingStruct.verify(view)) {
             pingIds.set(id, common.PingStruct.timestamp.read(view));
@@ -223,7 +225,7 @@ wss.on('connection', function connection(ws) {
 
             if (balloon !== undefined) {
                 balloons.delete(id);
-                poppedBalloonIds.add(balloonId);
+                poppedBalloonIds.set(balloonId, common.BalloonPopStruct.playerId.read(view));
                 balloonCounter--;
             } else {
                 console.log("balloon no longer exists");
@@ -258,25 +260,119 @@ function tick() {
     let bytesSentCounter = 0;
 
     if (poppedBalloonIds.size > 0) {
-        {
-            // todo: refactor to remove the nested loop
-            poppedBalloonIds.forEach((balloonId) => {
-                const view = new DataView(new ArrayBuffer(common.BalloonPopStruct.size));
+        // todo: refactor to remove the nested loop
+        poppedBalloonIds.forEach((playerId, balloonId) => {
+            const player = players.get(playerId);
+            if (player !== undefined) {
+                player.score += 5;
+                updatedScorePlayerIds.add(playerId);
+            }
 
-                common.BalloonPopStruct.kind.write(view, common.MessageKind.BalloonPop);
-                common.BalloonPopStruct.timestamp.write(view, performance.now());
-                common.BalloonPopStruct.id.write(view, balloonId);
+            const view = new DataView(new ArrayBuffer(common.BalloonPopStruct.size));
 
-                players.forEach((player) => {
-                    if (player.username !== undefined) {
-                        player.ws.send(view);
+            common.BalloonPopStruct.kind.write(view, common.MessageKind.BalloonPop);
+            common.BalloonPopStruct.timestamp.write(view, performance.now());
+            common.BalloonPopStruct.id.write(view, balloonId);
 
-                        bytesSentCounter += view.byteLength;
-                        messageSentCounter += 1;
+            players.forEach((player) => {
+                if (player.username !== undefined) {
+                    player.ws.send(view);
+
+                    bytesSentCounter += view.byteLength;
+                    messageSentCounter += 1;
+                }
+            });
+
+        });
+    }
+
+    // todo: sendout player score updates
+
+    {
+        if (requestUsernameIds.size > 0) {
+            requestUsernameIds.forEach((username, playerId) => {
+                const valid = !Array.from(players.values()).some(player => player.username === username);
+
+                const player = players.get(playerId);
+
+                if (player !== undefined) {
+
+                    if (valid) player.username = username;
+
+                    const view = new DataView(new ArrayBuffer(common.ValidUsernameStruct.size));
+
+                    common.ValidUsernameStruct.kind.write(view, common.MessageKind.ValidUsername);
+                    common.ValidUsernameStruct.value.write(view, username);
+                    common.ValidUsernameStruct.valid.write(view, valid ? 1 : 0);
+
+                    player.ws.send(view);
+
+                    if (valid) setUsernameIds.add(playerId);
+                }
+            });
+        }
+
+        if (setUsernameIds.size > 0) {
+            // notify all newly set username players of the existing players with username
+            {
+                const existingPlayersWithUsernames = filterPlayersOnServerMap(players, (player) => player.username !== undefined && !setUsernameIds.has(player.id));
+
+                const count = existingPlayersWithUsernames.size;
+                const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
+                const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
+                common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+
+                let index = 0;
+                existingPlayersWithUsernames.forEach((player) => {
+                    if (player.username !== undefined) { // this should not happen
+                        const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
+                        common.PlayerStruct.id.write(playerView, player.id);
+                        common.PlayerStruct.username.write(playerView, player.username);
+                        common.PlayerStruct.score.write(playerView, player.score);
+                        index += 1;
                     }
                 });
 
-            });
+                setUsernameIds.forEach((playerId) => {
+                    const player = players.get(playerId);
+                    if (player !== undefined) { // this should not happen
+                        player.ws.send(buffer);
+                        bytesSentCounter += buffer.byteLength;
+                        messageSentCounter += 1;
+                    }
+                });
+            }
+
+            // notify existing players with username of those who have got a username set
+            {
+                const count = setUsernameIds.size;
+                const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
+                const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
+                common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+
+                let index = 0;
+                setUsernameIds.forEach((playerId) => {
+                    const player = players.get(playerId);
+
+                    if (player !== undefined && player.username !== undefined) { // this should not happen
+                        const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
+
+                        common.PlayerStruct.id.write(playerView, player.id);
+                        common.PlayerStruct.username.write(playerView, player.username);
+                        common.PlayerStruct.score.write(playerView, player.score);
+
+                        index += 1;
+                    }
+                });
+
+                players.forEach((player) => {
+                    if (player.username && !setUsernameIds.has(player.id)) {
+                        player.ws.send(buffer);
+                        bytesSentCounter += buffer.byteLength;
+                        messageSentCounter += 1;
+                    }
+                });
+            }
         }
     }
 
@@ -382,9 +478,15 @@ function tick() {
 
     createdBalloonIds.clear();
     poppedBalloonIds.clear();
+
+    updatedScorePlayerIds.clear();
+
     joinedIds.clear();
     leftIds.clear();
+
     pingIds.clear();
+    requestUsernameIds.clear();
+    setUsernameIds.clear();
 
     bytesReceivedWithinTick = 0;
     messagesReceivedWithinTick = 0;
