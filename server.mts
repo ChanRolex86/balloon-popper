@@ -288,93 +288,125 @@ function tick() {
 
     // todo: sendout player score updates
 
-    {
-        if (requestUsernameIds.size > 0) {
-            requestUsernameIds.forEach((username, playerId) => {
-                const valid = !Array.from(players.values()).some(player => player.username === username);
+    if (requestUsernameIds.size > 0) {
+        requestUsernameIds.forEach((username, playerId) => {
+            const valid = !Array.from(players.values()).some(player => player.username === username);
 
+            const player = players.get(playerId);
+
+            if (player !== undefined) {
+
+                if (valid) player.username = username;
+
+                const view = new DataView(new ArrayBuffer(common.ValidUsernameStruct.size));
+
+                common.ValidUsernameStruct.kind.write(view, common.MessageKind.ValidUsername);
+                common.ValidUsernameStruct.value.write(view, username);
+                common.ValidUsernameStruct.valid.write(view, valid ? 1 : 0);
+
+                player.ws.send(view);
+
+                if (valid) setUsernameIds.add(playerId);
+            }
+        });
+    }
+
+    if (setUsernameIds.size > 0) {
+        // notify all newly set username players of the existing players with username
+        {
+            const existingPlayersWithUsernames = filterPlayersOnServerMap(
+                players,
+                (player) => player.username !== undefined && !setUsernameIds.has(player.id)
+            );
+
+            const count = existingPlayersWithUsernames.size;
+            const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
+            const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
+            common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+
+            let index = 0;
+            existingPlayersWithUsernames.forEach((player) => {
+                if (player.username !== undefined) { // this should not happen
+                    const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
+                    common.PlayerStruct.id.write(playerView, player.id);
+                    common.PlayerStruct.username.write(playerView, player.username);
+                    common.PlayerStruct.score.write(playerView, player.score);
+                    index += 1;
+                }
+            });
+
+            setUsernameIds.forEach((playerId) => {
                 const player = players.get(playerId);
-
-                if (player !== undefined) {
-
-                    if (valid) player.username = username;
-
-                    const view = new DataView(new ArrayBuffer(common.ValidUsernameStruct.size));
-
-                    common.ValidUsernameStruct.kind.write(view, common.MessageKind.ValidUsername);
-                    common.ValidUsernameStruct.value.write(view, username);
-                    common.ValidUsernameStruct.valid.write(view, valid ? 1 : 0);
-
-                    player.ws.send(view);
-
-                    if (valid) setUsernameIds.add(playerId);
+                if (player !== undefined) { // this should not happen
+                    player.ws.send(buffer);
+                    bytesSentCounter += buffer.byteLength;
+                    messageSentCounter += 1;
                 }
             });
         }
 
-        if (setUsernameIds.size > 0) {
-            // notify all newly set username players of the existing players with username
-            {
-                const existingPlayersWithUsernames = filterPlayersOnServerMap(players, (player) => player.username !== undefined && !setUsernameIds.has(player.id));
+        // notify existing players with username of those who have got a username set
+        {
+            const count = setUsernameIds.size;
+            const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
+            const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
+            common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
 
-                const count = existingPlayersWithUsernames.size;
-                const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
-                const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
-                common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+            let index = 0;
+            setUsernameIds.forEach((playerId) => {
+                const player = players.get(playerId);
 
-                let index = 0;
-                existingPlayersWithUsernames.forEach((player) => {
-                    if (player.username !== undefined) { // this should not happen
-                        const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
-                        common.PlayerStruct.id.write(playerView, player.id);
-                        common.PlayerStruct.username.write(playerView, player.username);
-                        common.PlayerStruct.score.write(playerView, player.score);
-                        index += 1;
-                    }
-                });
+                if (player !== undefined && player.username !== undefined) { // this should not happen
+                    const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
 
-                setUsernameIds.forEach((playerId) => {
-                    const player = players.get(playerId);
-                    if (player !== undefined) { // this should not happen
-                        player.ws.send(buffer);
-                        bytesSentCounter += buffer.byteLength;
-                        messageSentCounter += 1;
-                    }
-                });
-            }
+                    common.PlayerStruct.id.write(playerView, player.id);
+                    common.PlayerStruct.username.write(playerView, player.username);
+                    common.PlayerStruct.score.write(playerView, player.score);
 
-            // notify existing players with username of those who have got a username set
-            {
-                const count = setUsernameIds.size;
-                const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
-                const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
-                common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+                    index += 1;
+                }
+            });
 
-                let index = 0;
-                setUsernameIds.forEach((playerId) => {
-                    const player = players.get(playerId);
-
-                    if (player !== undefined && player.username !== undefined) { // this should not happen
-                        const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
-
-                        common.PlayerStruct.id.write(playerView, player.id);
-                        common.PlayerStruct.username.write(playerView, player.username);
-                        common.PlayerStruct.score.write(playerView, player.score);
-
-                        index += 1;
-                    }
-                });
-
-                players.forEach((player) => {
-                    if (player.username && !setUsernameIds.has(player.id)) {
-                        player.ws.send(buffer);
-                        bytesSentCounter += buffer.byteLength;
-                        messageSentCounter += 1;
-                    }
-                });
-            }
+            players.forEach((player) => {
+                if (player.username && !setUsernameIds.has(player.id)) {
+                    player.ws.send(buffer);
+                    bytesSentCounter += buffer.byteLength;
+                    messageSentCounter += 1;
+                }
+            });
         }
     }
+
+    if (updatedScorePlayerIds.size > 0) {
+        const count = updatedScorePlayerIds.size;
+        const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
+        const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
+        common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+
+        let index = 0;
+        updatedScorePlayerIds.forEach((playerId) => {
+            const player = players.get(playerId);
+
+            if (player !== undefined && player.username !== undefined) { // this should not happen
+                const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
+
+                common.PlayerStruct.id.write(playerView, player.id);
+                common.PlayerStruct.username.write(playerView, player.username);
+                common.PlayerStruct.score.write(playerView, player.score);
+
+                index += 1;
+            }
+
+            players.forEach((player) => {
+                if (player.username) {
+                    player.ws.send(buffer);
+                    bytesSentCounter += buffer.byteLength;
+                    messageSentCounter += 1;
+                }
+            });
+        });
+    }
+
 
     if (joinedIds.size > 0) {
         {

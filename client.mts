@@ -30,8 +30,8 @@ import type { Player, Balloon } from './common.mjs';
     if (gameCtx === null) throw new Error('2d canvas is not supported');
 
     let ws: WebSocket | undefined = new WebSocket(`ws://${window.location.hostname}:${common.SERVER_PORT}`);
-
     let me: Player | undefined = undefined;
+    const players = new Map<number, Player>();
 
     const balloons = new Map<number, Balloon>();
     const balloonPaths = new Map<number, Path2D>();
@@ -72,6 +72,8 @@ import type { Player, Balloon } from './common.mjs';
                     username: undefined,
                     score: 0
                 }
+                players.set(me.id, me);
+
             } else {
                 console.error("Received bs message from server. Incorrect `Hello` message.", view);
                 ws?.close();
@@ -92,8 +94,32 @@ import type { Player, Balloon } from './common.mjs';
             }
 
         } else {
-            if (common.PongStruct.verify(view)) {
+            if (common.PlayersHeaderStruct.verify(view)) {
+                const count = common.PlayersHeaderStruct.count(view);
+                for (let i = 0; i < count; i++) {
+                    const playerView = new DataView(event.data, common.PlayersHeaderStruct.size + i * common.PlayerStruct.size, common.PlayerStruct.size);
+
+                    const id = common.PlayerStruct.id.read(playerView);
+                    const score = common.PlayerStruct.score.read(playerView);
+                    const username = common.PlayerStruct.username.read(playerView);
+
+                    const player = players.get(id);
+
+                    if (player === undefined) {
+                        players.set(id, {
+                            id,
+                            username,
+                            score
+                        });
+                    } else {
+                        player.username = username;
+                        player.score = score;
+                    }
+                }
+
+            } else if (common.PongStruct.verify(view)) {
                 ping = performance.now() - common.PongStruct.timestamp.read(view);
+
             } else if (common.BalloonCreatedStruct.verify(view)) {
                 const id = common.BalloonCreatedStruct.id.read(view);
 
@@ -109,6 +135,7 @@ import type { Player, Balloon } from './common.mjs';
                 const id = common.BalloonPopStruct.id.read(view);
 
                 balloons.delete(id);
+
             } else {
                 console.error("Received bs message from server.", view);
                 ws?.close();
