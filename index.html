@@ -169,6 +169,36 @@
             transform: translate(-50%, -50%);
             z-index: 2;
         }
+
+        div#joined {
+            position: absolute;
+            left: calc(50% - 500px);
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            width: 200px;
+            height: 600px;
+        }
+
+        div#leaderboard-container {
+            position: absolute;
+            left: calc(50% + 500px);
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            width: 200px;
+            height: 600px;
+        }
+
+        div#leaderboard-container>h1,
+        ol {
+            padding-left: 20px;
+            padding-top: 20px;
+        }
+
+        ol#leaderboard {
+            margin-top: 20px;
+        }
     </style>
 </head>
 
@@ -176,6 +206,11 @@
     <canvas id="info"></canvas>
     <canvas id="game"></canvas>
     <input id="username" hidden />
+    <div id="joined"></div>
+    <div id="leaderboard-container">
+        <h1>Leaderboard</h1>
+        <ol id="leaderboard"></ol>
+    </div>
     <script type="module" src="client.mjs"></script>
 </body>
 

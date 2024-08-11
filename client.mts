@@ -6,10 +6,14 @@ import type { Player, Balloon } from './common.mjs';
     const infoCanvas = document.getElementById('info') as HTMLCanvasElement | null;
     const gameCanvas = document.getElementById('game') as HTMLCanvasElement | null;
     const usernameInput = document.getElementById('username') as HTMLInputElement | null;
+    const joinedDiv = document.getElementById('joined') as HTMLDivElement | null;
+    const leaderboardList = document.getElementById('leaderboard') as HTMLOListElement | null;
 
     if (infoCanvas === null) throw new Error('No element with id `info`');
     if (gameCanvas === null) throw new Error('No element with id `game`');
     if (usernameInput === null) throw new Error('No element with id `username`');
+    if (joinedDiv === null) throw new Error('No element with id `joined`');
+    if (leaderboardList === null) throw new Error('No element with id `leaderboard`');
 
     const focusUsernameInput = () => usernameInput.focus();
     const hideUsernameInput = () => {
@@ -17,8 +21,8 @@ import type { Player, Balloon } from './common.mjs';
         usernameInput.hidden = true;
     }
 
-    infoCanvas.width = common.WORLD_WIDTH;
-    infoCanvas.height = common.WORLD_HEIGHT + 2 * common.PADDING;
+    infoCanvas.width = common.WORLD_WIDTH + (2 * common.WORLD_FACTOR);
+    infoCanvas.height = common.WORLD_HEIGHT + (2 * common.PADDING);
 
     gameCanvas.width = common.WORLD_WIDTH;
     gameCanvas.height = common.WORLD_HEIGHT;
@@ -32,9 +36,12 @@ import type { Player, Balloon } from './common.mjs';
     let ws: WebSocket | undefined = new WebSocket(`ws://${window.location.hostname}:${common.SERVER_PORT}`);
     let me: Player | undefined = undefined;
     const players = new Map<number, Player>();
+    const joinedPlayerIds = new Set<number>;
 
     const balloons = new Map<number, Balloon>();
     const balloonPaths = new Map<number, Path2D>();
+
+    let top5Players = [];
 
     let ping = 0;
 
@@ -72,7 +79,6 @@ import type { Player, Balloon } from './common.mjs';
                     username: undefined,
                     score: 0
                 }
-                players.set(me.id, me);
 
             } else {
                 console.error("Received bs message from server. Incorrect `Hello` message.", view);
@@ -86,6 +92,8 @@ import type { Player, Balloon } from './common.mjs';
                 if (valid) {
                     me.username = username;
                     hideUsernameInput();
+                    players.set(me.id, me);
+                    joinedPlayerIds.add(me.id);
                 }
 
             } else {
@@ -103,18 +111,47 @@ import type { Player, Balloon } from './common.mjs';
                     const score = common.PlayerStruct.score.read(playerView);
                     const username = common.PlayerStruct.username.read(playerView);
 
-                    const player = players.get(id);
-
-                    if (player === undefined) {
+                    if (id !== me.id) {
                         players.set(id, {
                             id,
                             username,
                             score
                         });
-                    } else {
-                        player.username = username;
+                    }
+                }
+
+            } else if (common.PlayersJoinedHeaderStruct.verify(view)) {
+                const count = common.PlayersJoinedHeaderStruct.count(view);
+                for (let i = 0; i < count; i++) {
+                    const playerView = new DataView(event.data, common.PlayersJoinedHeaderStruct.size + i * common.PlayerUsernameStruct.size, common.PlayerUsernameStruct.size);
+
+                    const id = common.PlayerUsernameStruct.id.read(playerView);
+                    const score = 0;
+                    const username = common.PlayerUsernameStruct.username.read(playerView);
+
+                    players.set(id, {
+                        id,
+                        username,
+                        score
+                    });
+                    joinedPlayerIds.add(id);
+                }
+
+
+            } else if (common.PlayersScoresHeaderStruct.verify(view)) {
+                const count = common.PlayersScoresHeaderStruct.count(view);
+                for (let i = 0; i < count; i++) {
+                    const playerView = new DataView(event.data, common.PlayersScoresHeaderStruct.size + i * common.PlayerScoreStruct.size, common.PlayerScoreStruct.size);
+
+                    const id = common.PlayerScoreStruct.id.read(playerView);
+                    const score = common.PlayerScoreStruct.score.read(playerView);
+
+                    const player = players.get(id);
+
+                    if (player !== undefined) {
                         player.score = score;
                     }
+
                 }
 
             } else if (common.PongStruct.verify(view)) {
@@ -181,11 +218,53 @@ import type { Player, Balloon } from './common.mjs';
             infoCtx.fillStyle = "white";
             infoCtx.textBaseline = 'middle';
 
-            infoCtx.fillText(`Ping: ${ping.toFixed(2)}ms`, common.PADDING, common.PADDING / 2);
+            infoCtx.fillText(`Ping: ${ping.toFixed(2)}ms`, common.WORLD_FACTOR + common.PADDING, common.PADDING / 2);
+
+            // {
+            //     // render leaderboard
+            //     leaderboardList.innerHTML = '';
+            //     leaderboardList.innerHTML = `
+            //         <li>
+            //     `
+            //     // leaderboardDiv.querySelector('ol')!.innerHTML = `
+
+            //     // `
+            // }
 
             pingCooldown -= 1;
 
             if (pingCooldown <= 0) {
+                // TODO: render joined player ids
+                if (joinedPlayerIds.size > 0) {
+                    joinedPlayerIds.forEach((playerId) => {
+                        const player = players.get(playerId);
+
+                        if (player !== undefined) {
+                            console.log('player joined');
+                            console.log(player.username);
+                        }
+                    });
+                }
+
+                // TODO: update top 5 players
+                top5Players = [];
+                top5Players = Array.from(players.values())
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, 5)
+                    .map((player) => ({
+                        username: common.uint8ArrayToString(player.username!), // this is guarenteed to be true
+                        score: player.score
+                    }));
+
+                leaderboardList.innerHTML = '';
+
+                // Create and append a list item for each player
+                top5Players.forEach((player, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = `${index + 1}. ${player.username}: ${player.score}`;
+                    leaderboardList.appendChild(li);
+                });
+
                 const view = new DataView(new ArrayBuffer(common.PingStruct.size));
                 common.PingStruct.kind.write(view, common.MessageKind.Ping);
                 common.PingStruct.timestamp.write(view, performance.now());

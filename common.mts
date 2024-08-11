@@ -32,7 +32,9 @@ export enum MessageKind {
     BalloonPop,
     SetUsername,
     ValidUsername,
-    Players
+    Players,
+    PlayersJoined,
+    PlayersScores,
 }
 
 interface Field {
@@ -179,12 +181,52 @@ export const PlayerStruct = (() => {
     return { id, username, score, size };
 })();
 
+export const PlayerUsernameStruct = (() => {
+    const allocator = { size: 0 };
+    const id = allocUint32Field(allocator);
+    const username = allocUint8ArrayField(allocator, USERNAME_LENGTH);
+    const size = allocator.size;
+
+    return { id, username, size };
+})();
+
+export const PlayerScoreStruct = (() => {
+    const allocator = { size: 0 };
+    const id = allocUint32Field(allocator);
+    const score = allocUint32Field(allocator);
+    const size = allocator.size;
+
+    return { id, score, size };
+})();
+
 export const PlayersHeaderStruct = (() => {
     const allocator = { size: 0 };
     const kind = allocUint8Field(allocator);
     const size = allocator.size;
     const itemSize = PlayerStruct.size;
     const verify = (view: DataView) => view.byteLength && (view.byteLength - size) % itemSize === 0 && kind.read(view) == MessageKind.Players;
+    const count = (view: DataView) => (view.byteLength - size) / itemSize;
+
+    return { kind, count, size, verify };
+})();
+
+export const PlayersJoinedHeaderStruct = (() => {
+    const allocator = { size: 0 };
+    const kind = allocUint8Field(allocator);
+    const size = allocator.size;
+    const itemSize = PlayerUsernameStruct.size;
+    const verify = (view: DataView) => view.byteLength && (view.byteLength - size) % itemSize === 0 && kind.read(view) == MessageKind.PlayersJoined;
+    const count = (view: DataView) => (view.byteLength - size) / itemSize;
+
+    return { kind, count, size, verify };
+})();
+
+export const PlayersScoresHeaderStruct = (() => {
+    const allocator = { size: 0 };
+    const kind = allocUint8Field(allocator);
+    const size = allocator.size;
+    const itemSize = PlayerScoreStruct.size;
+    const verify = (view: DataView) => view.byteLength && (view.byteLength - size) % itemSize === 0 && kind.read(view) == MessageKind.PlayersScores;
     const count = (view: DataView) => (view.byteLength - size) / itemSize;
 
     return { kind, count, size, verify };
@@ -243,4 +285,8 @@ export function stringToUint8Array(str: string, length: number): Uint8Array {
         array[i] = (str.charCodeAt(i) || 0);
     }
     return array;
+}
+
+export function uint8ArrayToString(arr: Uint8Array): string {
+    return new TextDecoder().decode(arr);
 }

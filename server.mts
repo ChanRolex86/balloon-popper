@@ -335,6 +335,8 @@ function tick() {
                 }
             });
 
+            // todo: notify new players of existing balloons
+
             setUsernameIds.forEach((playerId) => {
                 const player = players.get(playerId);
                 if (player !== undefined) { // this should not happen
@@ -348,20 +350,19 @@ function tick() {
         // notify existing players with username of those who have got a username set
         {
             const count = setUsernameIds.size;
-            const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
-            const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
-            common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+            const buffer = new ArrayBuffer(common.PlayersJoinedHeaderStruct.size + count * common.PlayerUsernameStruct.size);
+            const headerView = new DataView(buffer, 0, common.PlayersJoinedHeaderStruct.size);
+            common.PlayersJoinedHeaderStruct.kind.write(headerView, common.MessageKind.PlayersJoined);
 
             let index = 0;
             setUsernameIds.forEach((playerId) => {
                 const player = players.get(playerId);
 
                 if (player !== undefined && player.username !== undefined) { // this should not happen
-                    const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
+                    const playerView = new DataView(buffer, common.PlayersJoinedHeaderStruct.size + index * common.PlayerUsernameStruct.size);
 
-                    common.PlayerStruct.id.write(playerView, player.id);
-                    common.PlayerStruct.username.write(playerView, player.username);
-                    common.PlayerStruct.score.write(playerView, player.score);
+                    common.PlayerUsernameStruct.id.write(playerView, player.id);
+                    common.PlayerUsernameStruct.username.write(playerView, player.username);
 
                     index += 1;
                 }
@@ -379,20 +380,19 @@ function tick() {
 
     if (updatedScorePlayerIds.size > 0) {
         const count = updatedScorePlayerIds.size;
-        const buffer = new ArrayBuffer(common.PlayersHeaderStruct.size + count * common.PlayerStruct.size);
-        const headerView = new DataView(buffer, 0, common.PlayersHeaderStruct.size);
-        common.PlayersHeaderStruct.kind.write(headerView, common.MessageKind.Players);
+        const buffer = new ArrayBuffer(common.PlayersScoresHeaderStruct.size + count * common.PlayerScoreStruct.size);
+        const headerView = new DataView(buffer, 0, common.PlayersScoresHeaderStruct.size);
+        common.PlayersScoresHeaderStruct.kind.write(headerView, common.MessageKind.PlayersScores);
 
         let index = 0;
         updatedScorePlayerIds.forEach((playerId) => {
             const player = players.get(playerId);
 
             if (player !== undefined && player.username !== undefined) { // this should not happen
-                const playerView = new DataView(buffer, common.PlayersHeaderStruct.size + index * common.PlayerStruct.size);
+                const playerView = new DataView(buffer, common.PlayersScoresHeaderStruct.size + index * common.PlayerScoreStruct.size);
 
-                common.PlayerStruct.id.write(playerView, player.id);
-                common.PlayerStruct.username.write(playerView, player.username);
-                common.PlayerStruct.score.write(playerView, player.score);
+                common.PlayerScoreStruct.id.write(playerView, player.id);
+                common.PlayerScoreStruct.score.write(playerView, player.score);
 
                 index += 1;
             }
@@ -443,7 +443,9 @@ function tick() {
         }
     });
 
-    if (players.size && balloonCounter < BALLOON_LIMIT && Stats.ticksCount.counter % (SERVER_FPS / 2) === 0) {
+    const playersWithUsername = filterPlayersOnServerMap(players, (player) => player.username !== undefined);
+
+    if (playersWithUsername.size && balloonCounter < BALLOON_LIMIT && Stats.ticksCount.counter % (SERVER_FPS / 2) === 0) {
         const dynamicProbability = Math.exp(-balloonCounter / (BALLOON_LIMIT / 4));
         if (Math.random() < dynamicProbability) {
 
